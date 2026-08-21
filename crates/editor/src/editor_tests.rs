@@ -39550,7 +39550,7 @@ async fn test_find_references_single_case(cx: &mut TestAppContext) {
         .await
         .unwrap();
 
-    assert_eq!(navigated, Navigated::No);
+    assert_eq!(navigated, Navigated::Yes);
 
     cx.run_until_parked();
 

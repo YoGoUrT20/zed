@@ -182,6 +182,9 @@ fn try_show_references(
     window: &mut Window,
     cx: &mut Context<Editor>,
 ) -> bool {
+    if !editor.lsp_data_enabled() {
+        return true;
+    }
     if arguments.len() < 3 {
         return false;
     }
@@ -192,15 +195,15 @@ fn try_show_references(
         return false;
     }
 
+    editor.begin_navigation();
     let server_id = action.server_id;
     let nav_entry = editor.navigation_entry(editor.selections.newest_anchor().head(), cx);
     let links = locations
         .into_iter()
         .map(|location| HoverLink::LspLocation(location, server_id))
         .collect();
-    editor
-        .navigate_to_hover_links(None, links, nav_entry, false, window, cx)
-        .detach_and_log_err(cx);
+    let task = editor.navigate_to_hover_links(None, links, nav_entry, false, window, cx);
+    editor.run_navigation_task(task, cx);
 
     true
 }
@@ -653,6 +656,9 @@ fn build_code_lens_renderer(line: CodeLensLine, editor: WeakEntity<Editor>) -> R
                                 move |_event, window, cx| {
                                     if let Some(editor) = editor_handle.upgrade() {
                                         editor.update(cx, |editor, cx| {
+                                            if !editor.lsp_data_enabled() {
+                                                return;
+                                            }
                                             editor.change_selections(
                                                 SelectionEffects::default(),
                                                 window,
@@ -714,16 +720,17 @@ mod tests {
     };
 
     use collections::HashSet;
-    use futures::StreamExt;
-    use gpui::TestAppContext;
+    use futures::{StreamExt, channel::oneshot};
+    use gpui::{Task, TestAppContext};
     use indoc::indoc;
+    use project::{CodeAction, LspAction};
     use settings::CodeLens;
     use util::path;
 
     use multi_buffer::{MultiBufferRow, ToPoint as _};
     use text::Point;
 
-    use super::{CODE_LENS_SEPARATOR, displayed_title};
+    use super::{CODE_LENS_SEPARATOR, displayed_title, try_handle_client_command};
     use crate::{
         Editor, LSP_REQUEST_DEBOUNCE_TIMEOUT,
         editor_tests::{init_test, update_test_editor_settings},
@@ -1828,6 +1835,112 @@ mod tests {
             HashSet::from_iter([70, 80, 90]),
             "Only newly visible lenses at the bottom should be resolved, not middle ones"
         );
+    }
+
+    #[gpui::test]
+    async fn test_code_lens_navigation_task_ownership(cx: &mut TestAppContext) {
+        init_test(cx, |_| {});
+        let mut cx =
+            EditorLspTestContext::new_typescript(lsp::ServerCapabilities::default(), cx).await;
+        let workspace = cx.workspace.clone();
+        let anchor = cx.buffer(|buffer, _| buffer.anchor_before(0));
+        let arguments = vec![
+            serde_json::json!(cx.buffer_lsp_url),
+            serde_json::json!(lsp::Position::new(0, 0)),
+            serde_json::json!([lsp::Location {
+                uri: cx.buffer_lsp_url.clone(),
+                range: lsp::Range::new(lsp::Position::new(1, 0), lsp::Position::new(1, 0)),
+            }]),
+        ];
+
+        for command in [
+            "editor.action.showReferences",
+            "editor.action.goToLocations",
+            "editor.action.peekLocations",
+        ] {
+            let mut action = CodeAction {
+                server_id: cx.lsp.server.server_id(),
+                range: anchor..anchor,
+                lsp_action: LspAction::Command(lsp::Command {
+                    title: "1 reference".to_owned(),
+                    command: command.to_owned(),
+                    arguments: Some(arguments.clone()),
+                }),
+                resolved: true,
+            };
+            for (enable_lsp_data, cancel_navigation) in
+                [(true, false), (true, true), (false, false)]
+            {
+                cx.set_state("ˇfunction hello() {}\nfunction world() {}");
+                let (resume, pending) = oneshot::channel::<()>();
+                let previous_request = cx.update_editor(|editor, _, cx| {
+                    editor.enable_lsp_data = enable_lsp_data;
+                    let request = editor.begin_navigation();
+                    let task = cx.spawn(async move |_, _| {
+                        pending.await?;
+                        anyhow::Ok(())
+                    });
+                    editor.run_navigation_task(task, cx);
+                    request
+                });
+                cx.run_until_parked();
+
+                cx.update_editor(|editor, window, cx| {
+                    assert!(try_handle_client_command(
+                        &action, editor, &workspace, window, cx,
+                    ));
+                    if enable_lsp_data {
+                        assert!(!previous_request.is_current(editor));
+                    } else {
+                        assert!(previous_request.is_current(editor));
+                    }
+                    if cancel_navigation {
+                        let request = editor.navigation_request();
+                        editor.run_navigation_task(Task::ready(anyhow::Ok(())), cx);
+                        assert!(request.is_current(editor));
+                    }
+                });
+                cx.run_until_parked();
+
+                if enable_lsp_data {
+                    assert_eq!(resume.send(()), Err(()));
+                } else {
+                    resume
+                        .send(())
+                        .expect("disabled navigation must keep the task");
+                    cx.run_until_parked();
+                }
+                if enable_lsp_data && !cancel_navigation {
+                    cx.assert_editor_state("function hello() {}\nˇfunction world() {}");
+                } else {
+                    cx.assert_editor_state("ˇfunction hello() {}\nfunction world() {}");
+                }
+            }
+
+            for arguments in [
+                Vec::new(),
+                vec![serde_json::Value::Null; 3],
+                vec![
+                    serde_json::Value::Null,
+                    serde_json::Value::Null,
+                    serde_json::json!([]),
+                ],
+            ] {
+                action.lsp_action = LspAction::Command(lsp::Command {
+                    title: "0 references".to_owned(),
+                    command: command.to_owned(),
+                    arguments: Some(arguments),
+                });
+                cx.update_editor(|editor, window, cx| {
+                    editor.enable_lsp_data = true;
+                    let request = editor.navigation_request();
+                    assert!(!try_handle_client_command(
+                        &action, editor, &workspace, window, cx,
+                    ));
+                    assert!(request.is_current(editor));
+                });
+            }
+        }
     }
 
     fn code_lens_assertion_text(editor: &Editor, cx: &ui::App) -> String {

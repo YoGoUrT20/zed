@@ -801,6 +801,23 @@ impl SplittableEditor {
             editor
         });
 
+        window.defer(cx, {
+            let workspace = self.workspace.clone();
+            let lhs_editor = lhs_editor.downgrade();
+            move |window, cx| {
+                if let Some(workspace) = workspace.upgrade()
+                    && let Some(lhs_editor) = lhs_editor.upgrade()
+                    && lhs_editor.read(cx).workspace().is_none()
+                {
+                    workspace.update(cx, |workspace, cx| {
+                        lhs_editor.update(cx, |editor, cx| {
+                            editor.added_to_workspace(workspace, window, cx);
+                        });
+                    });
+                }
+            }
+        });
+
         let mut subscriptions = vec![cx.subscribe_in(
             &lhs_editor,
             window,
@@ -2103,7 +2120,11 @@ impl Item for SplittableEditor {
         });
         if let Some(lhs) = &self.lhs {
             lhs.editor.update(cx, |lhs_editor, cx| {
-                lhs_editor.added_to_workspace(workspace, window, cx);
+                if lhs_editor.workspace().as_ref().map(Entity::downgrade)
+                    != Some(workspace.weak_handle())
+                {
+                    lhs_editor.added_to_workspace(workspace, window, cx);
+                }
             });
         }
     }
