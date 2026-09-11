@@ -60,7 +60,14 @@ impl WorktreeSettings {
 impl Settings for WorktreeSettings {
     fn from_settings(content: &settings::SettingsContent) -> Self {
         let worktree = content.project.worktree.clone();
-        let file_scan_exclusions = worktree.file_scan_exclusions.unwrap().0;
+        // When exclusions are switched off, everything the user listed becomes
+        // visible again, but the VCS directories stay out: scanning them is
+        // expensive and git state reaches the UI through the git integration.
+        let file_scan_exclusions = if worktree.file_scan_exclusions_enabled.unwrap_or(true) {
+            worktree.file_scan_exclusions.unwrap().0
+        } else {
+            ALWAYS_EXCLUDED.iter().map(|glob| glob.to_string()).collect()
+        };
         let file_scan_inclusions = worktree.file_scan_inclusions.unwrap();
         let private_files = worktree.private_files.unwrap().0;
         let hidden_files = worktree.hidden_files.unwrap();
@@ -103,6 +110,17 @@ impl Settings for WorktreeSettings {
         }
     }
 }
+
+/// Globs excluded from worktree scans regardless of `file_scan_exclusions_enabled`.
+const ALWAYS_EXCLUDED: &[&str] = &[
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/.sl",
+    "**/.repo",
+    "**/CVS",
+];
 
 fn path_matchers(mut values: Vec<String>, context: &'static str) -> anyhow::Result<PathMatcher> {
     values.sort();

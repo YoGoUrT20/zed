@@ -148,6 +148,17 @@ pub struct WorktreeSettingsContent {
     /// ]
     pub file_scan_exclusions: Option<SplicingVec>,
 
+    /// Whether `file_scan_exclusions` is in effect. Setting this to `false`
+    /// makes the excluded paths visible again without editing the glob list,
+    /// which is what `project_panel::ToggleFileScanExclusions` flips.
+    ///
+    /// Version control directories (`.git`, `.svn`, `.hg`, `.jj`, `.sl`,
+    /// `.repo`, `CVS`) stay excluded either way: scanning them is expensive and
+    /// their contents are surfaced through Zed's git integration instead.
+    ///
+    /// Default: true
+    pub file_scan_exclusions_enabled: Option<bool>,
+
     /// Always include files that match these globs when scanning for files, even if they're
     /// ignored by git. This setting is overridden by `file_scan_exclusions`.
     /// Default: [

@@ -390,6 +390,9 @@ actions!(
         OpenSplitHorizontal,
         /// Toggles visibility of git-ignored files.
         ToggleHideGitIgnore,
+        /// Toggles whether `file_scan_exclusions` is applied, showing or hiding
+        /// the paths it excludes. Version control directories stay hidden.
+        ToggleFileScanExclusions,
         /// Toggles visibility of hidden files.
         ToggleHideHidden,
         /// Starts a new search in the selected directory.
@@ -496,6 +499,19 @@ pub fn init(cx: &mut App) {
                         .hide_gitignore
                         .unwrap_or(false),
                 );
+            })
+        });
+
+        // Unlike the other visibility toggles, this one does not filter the
+        // panel: excluded paths are dropped during the worktree scan, so the
+        // worktree has no entries to show. Flipping the setting is what makes
+        // the worktree restart its scanners and pick the paths up.
+        workspace.register_action(|workspace, _: &ToggleFileScanExclusions, _, cx| {
+            let fs = workspace.app_state().fs.clone();
+            update_settings_file(fs, cx, move |setting, _| {
+                let worktree = &mut setting.project.worktree;
+                worktree.file_scan_exclusions_enabled =
+                    Some(!worktree.file_scan_exclusions_enabled.unwrap_or(true));
             })
         });
 

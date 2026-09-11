@@ -2257,6 +2257,89 @@ async fn test_file_scan_inclusions_reindexes_on_setting_change(cx: &mut TestAppC
 }
 
 #[gpui::test]
+async fn test_file_scan_exclusions_can_be_disabled(cx: &mut TestAppContext) {
+    init_test(cx);
+    cx.executor().allow_parking();
+    let dir = TempTree::new(json!({
+        ".git": {
+            "HEAD": "ref: refs/heads/main
+",
+        },
+        "node_modules": {
+            "prettier": {
+                "package.json": "{}",
+            },
+        },
+        "src": {
+            "lib.rs": "// lib",
+        },
+    }));
+
+    cx.update(|cx| {
+        cx.update_global::<SettingsStore, _>(|store, cx| {
+            store.update_user_settings(cx, |settings| {
+                settings.project.worktree.file_scan_exclusions = Some(SplicingVec::from(vec![
+                    "**/.git".to_string(),
+                    "**/node_modules".to_string(),
+                ]));
+                settings.project.worktree.file_scan_exclusions_enabled = Some(false);
+            });
+        });
+    });
+
+    let tree = Worktree::local(
+        dir.path(),
+        true,
+        RealFs::new(None, cx.executor()),
+        Default::default(),
+        true,
+        WorktreeId::from_proto(0),
+        &mut cx.to_async(),
+    )
+    .await
+    .unwrap();
+    cx.read(|cx| tree.read(cx).as_local().unwrap().scan_complete())
+        .await;
+    tree.flush_fs_events(cx).await;
+
+    tree.read_with(cx, |tree, _| {
+        // The user's globs are off, so what they excluded is scanned again...
+        assert!(
+            tree.entry_for_path(rel_path("node_modules/prettier/package.json"))
+                .is_some(),
+            "expected node_modules to be scanned while exclusions are disabled"
+        );
+        // ...but version control directories are excluded unconditionally.
+        assert!(
+            tree.entry_for_path(rel_path(".git")).is_none(),
+            "expected .git to stay excluded while exclusions are disabled"
+        );
+        assert!(tree.entry_for_path(rel_path("src/lib.rs")).is_some());
+    });
+
+    // Turning exclusions back on rescans and drops the excluded paths again.
+    cx.update(|cx| {
+        cx.update_global::<SettingsStore, _>(|store, cx| {
+            store.update_user_settings(cx, |settings| {
+                settings.project.worktree.file_scan_exclusions_enabled = Some(true);
+            });
+        });
+    });
+    cx.read(|cx| tree.read(cx).as_local().unwrap().scan_complete())
+        .await;
+    tree.flush_fs_events(cx).await;
+
+    tree.read_with(cx, |tree, _| {
+        assert!(
+            tree.entry_for_path(rel_path("node_modules")).is_none(),
+            "expected node_modules to be excluded once exclusions are enabled"
+        );
+        assert!(tree.entry_for_path(rel_path(".git")).is_none());
+        assert!(tree.entry_for_path(rel_path("src/lib.rs")).is_some());
+    });
+}
+
+#[gpui::test]
 async fn test_file_scan_exclusions(cx: &mut TestAppContext) {
     init_test(cx);
     cx.executor().allow_parking();

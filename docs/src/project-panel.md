@@ -164,6 +164,17 @@ See also [Diagnostics & Quick Fixes](./diagnostics.md) for editor and tab diagno
   this with {#action project_panel::ToggleHideGitIgnore}.
 - `project_panel.hide_hidden` hides dotfiles and other hidden entries. Toggle
   with {#action project_panel::ToggleHideHidden}.
+- `file_scan_exclusions_enabled` controls whether the `file_scan_exclusions`
+  globs apply at all. Toggle with
+  {#action project_panel::ToggleFileScanExclusions} to bring the excluded paths
+  back without editing the glob list.
+
+Unlike the two settings above, `file_scan_exclusions` is not a panel filter:
+excluded paths are skipped during the worktree scan, so they are absent from
+search and the file finder as well, and turning exclusions off makes the
+worktree rescan. Version control directories (`.git`, `.svn`, `.hg`, `.jj`,
+`.sl`, `.repo`, `CVS`) stay excluded either way, since scanning them is
+expensive and their contents reach the UI through Zed's git integration.
 
 ### Sorting
 

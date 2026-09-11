@@ -3904,9 +3904,29 @@ fn search_and_files_page() -> SettingsPage {
         ]
     }
 
-    fn file_scan_section() -> [SettingsPageItem; 7] {
+    fn file_scan_section() -> [SettingsPageItem; 8] {
         [
             SettingsPageItem::SectionHeader("File Scan"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Apply File Scan Exclusions",
+                description: "Whether \"File Scan Exclusions\" is in effect. Turn this off to make the excluded paths visible again without editing the glob list. Version control directories stay excluded either way",
+                field: Box::new(SettingField {
+                    organization_override: None,
+                    json_path: Some("file_scan_exclusions_enabled"),
+                    pick: |settings_content| {
+                        settings_content
+                            .project
+                            .worktree
+                            .file_scan_exclusions_enabled
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.project.worktree.file_scan_exclusions_enabled = value;
+                    },
+                }),
+                metadata: None,
+                files: USER | PROJECT,
+            }),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "File Scan Exclusions",
                 description: "Files or globs of files that will be excluded by Zed entirely. They will be skipped during file scans, file searches, and not be displayed in the project file tree. Takes precedence over \"File Scan Inclusions\"",

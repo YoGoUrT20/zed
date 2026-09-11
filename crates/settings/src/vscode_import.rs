@@ -1128,6 +1128,7 @@ impl VsCodeSettings {
         WorktreeSettingsContent {
             prevent_sharing_in_public_channels: false,
             file_scan_depth: None,
+            file_scan_exclusions_enabled: None,
             file_scan_exclusions: self
                 .read_value("files.watcherExclude")
                 .and_then(|v| v.as_array())
