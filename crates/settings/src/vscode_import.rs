@@ -929,6 +929,13 @@ impl VsCodeSettings {
             default_height: None,
             default_width: None,
             dock: None,
+            tab_bar_position: self.read_enum("terminal.integrated.tabs.location", |location| {
+                match location {
+                    "left" => Some(TerminalTabBarPosition::Left),
+                    "right" => Some(TerminalTabBarPosition::Right),
+                    _ => None,
+                }
+            }),
             starts_open: None,
             font_fallbacks,
             font_family,

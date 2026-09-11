@@ -11,27 +11,27 @@ use collections::HashMap;
 use db::kvp::KeyValueStore;
 use futures::{channel::oneshot, future::join_all};
 use gpui::{
-    Action, Anchor, App, AsyncApp, AsyncWindowContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Pixels, Render, Styled, Task, TaskExt, WeakEntity,
-    Window, actions,
+    Action, Anchor, AnyElement, App, AsyncApp, AsyncWindowContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, IntoElement, ParentElement, Pixels, Render, Styled, Task, TaskExt,
+    WeakEntity, Window, actions, px,
 };
 use itertools::Itertools;
 use project::{Fs, Project};
 
-use settings::{Settings, TerminalDockPosition};
+use settings::{Settings, SettingsStore, TerminalDockPosition, TerminalTabBarPosition};
 use task::{RevealStrategy, RevealTarget, Shell, ShellBuilder, SpawnInTerminal, TaskId};
 use terminal::{Terminal, terminal_settings::TerminalSettings};
 use ui::{
-    ButtonLike, Clickable, CommonAnimationExt, ContextMenu, FluentBuilder, PopoverMenu,
-    SplitButton, Toggleable, Tooltip, prelude::*,
+    ButtonLike, Clickable, CommonAnimationExt, ContextMenu, FluentBuilder, ListItem, PopoverMenu,
+    SplitButton, Tab, Toggleable, Tooltip, prelude::*,
 };
 use util::{ResultExt, TryFutureExt, defer};
 use workspace::{
     ActivateNextPane, ActivatePane, ActivatePaneDown, ActivatePaneLeft, ActivatePaneRight,
     ActivatePaneUp, ActivatePreviousPane, DraggedTab, ItemId, MoveItemToPane,
     MoveItemToPaneInDirection, MovePaneDown, MovePaneLeft, MovePaneRight, MovePaneUp, Pane,
-    PaneGroup, SplitDirection, SplitDown, SplitLeft, SplitMode, SplitRight, SplitUp, SwapPaneDown,
-    SwapPaneLeft, SwapPaneRight, SwapPaneUp, ToggleZoom, Workspace,
+    PaneGroup, SaveIntent, SplitDirection, SplitDown, SplitLeft, SplitMode, SplitRight, SplitUp,
+    SwapPaneDown, SwapPaneLeft, SwapPaneRight, SwapPaneUp, ToggleZoom, Workspace,
     dock::{DockPosition, Panel, PanelEvent, PanelHandle},
     item::SerializableItem,
     move_active_item, pane,
@@ -41,6 +41,10 @@ use anyhow::{Result, anyhow};
 use zed_actions::assistant::InlineAssist;
 
 const TERMINAL_PANEL_KEY: &str = "TerminalPanel";
+
+/// Width of the vertical terminal tab list, shown when
+/// `terminal.tab_bar_position` is `left` or `right`.
+const VERTICAL_TAB_LIST_WIDTH: Pixels = px(180.);
 
 actions!(
     terminal_panel,
@@ -109,6 +113,8 @@ impl TerminalPanel {
             active: false,
         };
         terminal_panel.apply_tab_bar_buttons(&terminal_panel.active_pane, cx);
+        cx.observe_global::<SettingsStore>(|_, cx| cx.notify())
+            .detach();
         terminal_panel
     }
 
@@ -224,6 +230,214 @@ impl TerminalPanel {
                 (None, right_children)
             });
         });
+    }
+
+    /// Renders the vertical list of every terminal in the panel, shown instead of
+    /// the per-pane horizontal tab bars when `terminal.tab_bar_position` is
+    /// `left` or `right`.
+    fn render_vertical_tab_list(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let panes = self.center.panes().into_iter().cloned().collect::<Vec<_>>();
+        let show_group_headers = panes.len() > 1;
+        let mut rows = Vec::new();
+        for (pane_ix, pane) in panes.iter().enumerate() {
+            if show_group_headers {
+                rows.push(
+                    h_flex()
+                        .px_2()
+                        .pt_1()
+                        .child(
+                            Label::new(format!("Group {}", pane_ix + 1))
+                                .size(LabelSize::XSmall)
+                                .color(Color::Muted),
+                        )
+                        .into_any_element(),
+                );
+            }
+            let pane_is_active = pane == &self.active_pane;
+            let active_item_index = pane.read(cx).active_item_index();
+            let items = pane
+                .read(cx)
+                .items()
+                .enumerate()
+                .map(|(ix, item)| {
+                    (
+                        ix,
+                        item.item_id(),
+                        item.tab_content_text(0, cx),
+                        item.tab_icon(window, cx),
+                    )
+                })
+                .collect::<Vec<_>>();
+            for (ix, item_id, label, icon) in items {
+                let is_active = pane_is_active && ix == active_item_index;
+                let activated_pane = pane.clone();
+                let closed_pane = pane.clone();
+                rows.push(
+                    ListItem::new(("terminal-vertical-tab", item_id))
+                        .toggle_state(is_active)
+                        .child(
+                            h_flex()
+                                .w_full()
+                                .gap_1p5()
+                                .children(icon.map(|icon| {
+                                    icon.size(IconSize::Small).color(if is_active {
+                                        Color::Default
+                                    } else {
+                                        Color::Muted
+                                    })
+                                }))
+                                .child(
+                                    Label::new(label.clone())
+                                        .size(LabelSize::Small)
+                                        .color(if is_active {
+                                            Color::Default
+                                        } else {
+                                            Color::Muted
+                                        })
+                                        .truncate(),
+                                ),
+                        )
+                        .tooltip(Tooltip::text(label))
+                        .on_click(cx.listener(move |_, _, window, cx| {
+                            activated_pane.update(cx, |pane, cx| {
+                                pane.activate_item(ix, true, true, window, cx);
+                            });
+                            window.focus(&activated_pane.focus_handle(cx), cx);
+                        }))
+                        .end_slot_on_hover(
+                            IconButton::new(("close-terminal", item_id), IconName::Close)
+                                .icon_size(IconSize::XSmall)
+                                .tooltip(Tooltip::text("Close Terminal"))
+                                .on_click(cx.listener(move |_, _, window, cx| {
+                                    closed_pane
+                                        .update(cx, |pane, cx| {
+                                            pane.close_item_by_id(
+                                                item_id,
+                                                SaveIntent::Close,
+                                                window,
+                                                cx,
+                                            )
+                                        })
+                                        .detach_and_log_err(cx);
+                                })),
+                        )
+                        .into_any_element(),
+                );
+            }
+        }
+
+        v_flex()
+            .h_full()
+            .w(VERTICAL_TAB_LIST_WIDTH)
+            .flex_none()
+            .bg(cx.theme().colors().tab_bar_background)
+            .child(self.render_vertical_tab_list_header(cx))
+            .child(
+                v_flex()
+                    .id("terminal-vertical-tab-list")
+                    .size_full()
+                    .overflow_y_scroll()
+                    .children(rows),
+            )
+            .into_any_element()
+    }
+
+    fn render_vertical_tab_list_header(&self, cx: &mut Context<Self>) -> AnyElement {
+        let split_context = self
+            .active_pane
+            .read(cx)
+            .active_item()
+            .and_then(|item| item.downcast::<TerminalView>())
+            .map(|terminal_view| terminal_view.read(cx).focus_handle.clone());
+        let focus_handle = self.active_pane.focus_handle(cx);
+        let is_zoomed = self.active_pane.read(cx).is_zoomed();
+
+        h_flex()
+            .flex_none()
+            .h(Tab::container_height(cx))
+            .px_1()
+            .gap(DynamicSpacing::Base02.rems(cx))
+            .justify_between()
+            .border_b_1()
+            .border_color(cx.theme().colors().border)
+            .child(
+                Label::new("Terminals")
+                    .size(LabelSize::Small)
+                    .color(Color::Muted),
+            )
+            .child(
+                h_flex()
+                    .gap(DynamicSpacing::Base02.rems(cx))
+                    .child(
+                        PopoverMenu::new("terminal-vertical-tabs-new")
+                            .trigger_with_tooltip(
+                                IconButton::new("plus", IconName::Plus).icon_size(IconSize::Small),
+                                Tooltip::text("New…"),
+                            )
+                            .anchor(Anchor::TopRight)
+                            .menu({
+                                let focus_handle = focus_handle.clone();
+                                move |window, cx| {
+                                    let focus_handle = focus_handle.clone();
+                                    Some(ContextMenu::build(window, cx, |menu, _, _| {
+                                        menu.context(focus_handle.clone())
+                                            .action(
+                                                "New Terminal",
+                                                workspace::NewTerminal::default().boxed_clone(),
+                                            )
+                                            .action(
+                                                "Spawn Task",
+                                                zed_actions::Spawn::modal().boxed_clone(),
+                                            )
+                                    }))
+                                }
+                            }),
+                    )
+                    .child(
+                        PopoverMenu::new("terminal-vertical-tabs-split")
+                            .trigger_with_tooltip(
+                                IconButton::new(
+                                    "terminal-vertical-tabs-split-button",
+                                    IconName::Split,
+                                )
+                                .icon_size(IconSize::Small),
+                                Tooltip::text("Split Pane"),
+                            )
+                            .anchor(Anchor::TopRight)
+                            .menu(move |window, cx| {
+                                let split_context = split_context.clone();
+                                ContextMenu::build(window, cx, |menu, _, _| {
+                                    menu.when_some(split_context, |menu, split_context| {
+                                        menu.context(split_context)
+                                    })
+                                    .action("Split Right", SplitRight::default().boxed_clone())
+                                    .action("Split Left", SplitLeft::default().boxed_clone())
+                                    .action("Split Up", SplitUp::default().boxed_clone())
+                                    .action("Split Down", SplitDown::default().boxed_clone())
+                                })
+                                .into()
+                            }),
+                    )
+                    .child(
+                        IconButton::new("toggle_zoom", IconName::Maximize)
+                            .icon_size(IconSize::Small)
+                            .toggle_state(is_zoomed)
+                            .selected_icon(IconName::Minimize)
+                            .tooltip(move |_window, cx| {
+                                Tooltip::for_action(
+                                    if is_zoomed { "Zoom Out" } else { "Zoom In" },
+                                    &ToggleZoom,
+                                    cx,
+                                )
+                            })
+                            .on_click(cx.listener(|terminal_panel, _, window, cx| {
+                                terminal_panel.active_pane.update(cx, |pane, cx| {
+                                    pane.toggle_zoom(&workspace::ToggleZoom, window, cx);
+                                });
+                            })),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn serialization_key(workspace: &Workspace) -> Option<String> {
@@ -1326,7 +1540,9 @@ pub fn new_terminal_pane(
         pane.set_zoomed(zoomed, cx);
         pane.set_can_navigate(false, cx);
         pane.display_nav_history_buttons(None);
-        pane.set_should_display_tab_bar(|_, _| true);
+        pane.set_should_display_tab_bar(|_, cx| {
+            TerminalSettings::get_global(cx).tab_bar_position == TerminalTabBarPosition::Top
+        });
         pane.set_zoom_out_on_close(false);
 
         let split_closure_terminal_panel = terminal_panel.downgrade();
@@ -1503,13 +1719,18 @@ impl Render for TerminalPanel {
                 )
                 .child(Label::new(label).color(Color::Muted))
         });
+        let tab_bar_position = TerminalSettings::get_global(cx).tab_bar_position;
+        let vertical_tab_list = match tab_bar_position {
+            TerminalTabBarPosition::Top => None,
+            TerminalTabBarPosition::Left | TerminalTabBarPosition::Right => {
+                Some(self.render_vertical_tab_list(window, cx))
+            }
+        };
         self.workspace
             .update(cx, |workspace, cx| {
-                registrar
-                    .track_focus(&self.focus_handle)
-                    .size_full()
-                    .relative()
-                    .child(self.center.render(
+                let center = self
+                    .center
+                    .render(
                         workspace.zoomed_item(),
                         None,
                         &workspace::PaneRenderContext {
@@ -1522,7 +1743,32 @@ impl Render for TerminalPanel {
                         },
                         window,
                         cx,
-                    ))
+                    )
+                    .into_any_element();
+                let children: Vec<AnyElement> = match vertical_tab_list {
+                    None => vec![center],
+                    Some(vertical_tab_list) => {
+                        let center = div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .child(center)
+                            .into_any_element();
+                        if tab_bar_position == TerminalTabBarPosition::Left {
+                            vec![vertical_tab_list, center]
+                        } else {
+                            vec![center, vertical_tab_list]
+                        }
+                    }
+                };
+                registrar
+                    .track_focus(&self.focus_handle)
+                    .size_full()
+                    .relative()
+                    .when(tab_bar_position != TerminalTabBarPosition::Top, |this| {
+                        this.flex().flex_row()
+                    })
+                    .children(children)
                     .children(restoring_placeholder)
             })
             .ok()

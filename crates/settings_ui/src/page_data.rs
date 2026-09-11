@@ -6046,7 +6046,7 @@ fn panels_page() -> SettingsPage {
         ]
     }
 
-    fn terminal_panel_section() -> [SettingsPageItem; 5] {
+    fn terminal_panel_section() -> [SettingsPageItem; 6] {
         [
             SettingsPageItem::SectionHeader("Terminal Panel"),
             SettingsPageItem::SettingItem(SettingItem {
@@ -6058,6 +6058,29 @@ fn panels_page() -> SettingsPage {
                     pick: |settings_content| settings_content.terminal.as_ref()?.dock.as_ref(),
                     write: |settings_content, value, _| {
                         settings_content.terminal.get_or_insert_default().dock = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Terminal Tab Bar Position",
+                description: "Where to show the terminal tabs inside the terminal panel. `left` and `right` show a vertical list of all terminals.",
+                field: Box::new(SettingField {
+                    organization_override: None,
+                    json_path: Some("terminal.tab_bar_position"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .tab_bar_position
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .tab_bar_position = value;
                     },
                 }),
                 metadata: None,

@@ -1982,6 +1982,10 @@
     "shell": "system",
     // Where to dock terminals panel. Can be `left`, `right`, `bottom`.
     "dock": "bottom",
+    // Where to show the terminal tabs inside the terminal panel.
+    // Can be `top` (a horizontal tab bar above each pane), `left` or `right`
+    // (a vertical list of all terminals beside them).
+    "tab_bar_position": "top",
     // Whether the terminal panel should open on startup.
     //
     // Default: false

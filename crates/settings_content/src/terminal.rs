@@ -137,6 +137,13 @@ pub struct TerminalSettingsContent {
     /// Default: true
     pub button: Option<bool>,
     pub dock: Option<TerminalDockPosition>,
+    /// Where to place the terminal tabs inside the terminal panel.
+    ///
+    /// `top` shows a horizontal tab bar above each terminal pane, `left` and
+    /// `right` show a vertical list of all terminals beside them (like VS Code).
+    ///
+    /// Default: top
+    pub tab_bar_position: Option<TerminalTabBarPosition>,
     /// Whether the terminal panel should open on startup.
     ///
     /// Default: false
@@ -200,7 +207,8 @@ crate::fallible_options::flattened_deserialize!(TerminalSettingsContent {
     options: {
         font_size, font_family, font_fallbacks, line_height, font_features, font_weight,
         cursor_shape, blinking, alternate_scroll, option_as_meta, copy_on_select,
-        keep_selection_on_copy, open_links_in_mouse_mode, button, dock, starts_open, flexible,
+        keep_selection_on_copy, open_links_in_mouse_mode, button, dock, tab_bar_position,
+        starts_open, flexible,
         default_width, default_height, max_scroll_history_lines, scroll_multiplier, toolbar,
         scrollbar, minimum_contrast, show_count_badge, bell,
     },
@@ -528,6 +536,32 @@ pub enum PathHyperlinkRegex {
 pub enum TerminalDockPosition {
     Left,
     Bottom,
+    Right,
+}
+
+/// Where the terminal tabs are shown inside the terminal panel.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    PartialEq,
+    Eq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalTabBarPosition {
+    /// A horizontal tab bar on top of every terminal pane.
+    #[default]
+    Top,
+    /// A vertical list of all terminals on the left of the terminal panel.
+    Left,
+    /// A vertical list of all terminals on the right of the terminal panel.
     Right,
 }
 
