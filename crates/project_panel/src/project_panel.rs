@@ -650,7 +650,12 @@ fn get_item_color(is_sticky: bool, cx: &App) -> ItemColors {
             colors.panel_background
         },
         hover: if is_sticky {
-            colors.panel_overlay_hover
+            // Sticky rows must occlude the entries scrolling underneath them, so a
+            // translucent hover color is composited over the overlay background
+            // instead of replacing it. Opaque hover colors pass through unchanged.
+            colors
+                .panel_overlay_background
+                .blend(colors.panel_overlay_hover)
         } else {
             colors.element_hover
         },
