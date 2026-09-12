@@ -1292,6 +1292,7 @@
     "context": "Terminal",
     "use_key_equivalents": true,
     "bindings": {
+      "f2": "terminal::RenameTerminal",
       "ctrl-alt-space": "terminal::ShowCharacterPalette",
       "ctrl-insert": "terminal::Copy",
       "ctrl-shift-c": "terminal::Copy",

@@ -1,7 +1,7 @@
 use std::{cmp, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
 use crate::{
-    TerminalView, default_working_directory,
+    RenameTerminal, TerminalView, default_working_directory,
     persistence::{
         SerializedItems, SerializedTerminalPanel, deserialize_terminal_panel, serialize_pane_group,
     },
@@ -11,9 +11,9 @@ use collections::HashMap;
 use db::kvp::KeyValueStore;
 use futures::{channel::oneshot, future::join_all};
 use gpui::{
-    Action, Anchor, AnyElement, App, AsyncApp, AsyncWindowContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, IntoElement, ParentElement, Pixels, Render, Styled, Task, TaskExt,
-    WeakEntity, Window, actions, px,
+    Action, Anchor, AnyElement, App, AsyncApp, AsyncWindowContext, ClickEvent, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Pixels, Render, Styled, Task,
+    TaskExt, WeakEntity, Window, actions, div, px,
 };
 use itertools::Itertools;
 use project::{Fs, Project};
@@ -265,13 +265,46 @@ impl TerminalPanel {
                         item.item_id(),
                         item.tab_content_text(0, cx),
                         item.tab_icon(window, cx),
+                        item.downcast::<TerminalView>(),
                     )
                 })
                 .collect::<Vec<_>>();
-            for (ix, item_id, label, icon) in items {
+            for (ix, item_id, label, icon, terminal_view) in items {
                 let is_active = pane_is_active && ix == active_item_index;
                 let activated_pane = pane.clone();
                 let closed_pane = pane.clone();
+                let rename_editor = terminal_view
+                    .as_ref()
+                    .and_then(|terminal_view| terminal_view.read(cx).rename_editor());
+                let is_renaming = rename_editor.is_some();
+                let label_element = match (rename_editor, terminal_view.clone()) {
+                    (Some(editor), Some(terminal_view)) => {
+                        let cancelled = terminal_view.clone();
+                        div()
+                            .w_full()
+                            .child(editor)
+                            .on_action(move |_: &menu::Confirm, window, cx| {
+                                terminal_view.update(cx, |terminal_view, cx| {
+                                    terminal_view.finish_renaming(true, window, cx);
+                                });
+                            })
+                            .on_action(move |_: &menu::Cancel, window, cx| {
+                                cancelled.update(cx, |terminal_view, cx| {
+                                    terminal_view.finish_renaming(false, window, cx);
+                                });
+                            })
+                            .into_any_element()
+                    }
+                    _ => Label::new(label.clone())
+                        .size(LabelSize::Small)
+                        .color(if is_active {
+                            Color::Default
+                        } else {
+                            Color::Muted
+                        })
+                        .truncate()
+                        .into_any_element(),
+                };
                 rows.push(
                     ListItem::new(("terminal-vertical-tab", item_id))
                         .toggle_state(is_active)
@@ -286,24 +319,31 @@ impl TerminalPanel {
                                         Color::Muted
                                     })
                                 }))
-                                .child(
-                                    Label::new(label.clone())
-                                        .size(LabelSize::Small)
-                                        .color(if is_active {
-                                            Color::Default
-                                        } else {
-                                            Color::Muted
-                                        })
-                                        .truncate(),
-                                ),
+                                .child(label_element),
                         )
-                        .tooltip(Tooltip::text(label))
-                        .on_click(cx.listener(move |_, _, window, cx| {
-                            activated_pane.update(cx, |pane, cx| {
-                                pane.activate_item(ix, true, true, window, cx);
-                            });
-                            window.focus(&activated_pane.focus_handle(cx), cx);
-                        }))
+                        .when(!is_renaming, |this| {
+                            let rename_target = terminal_view.clone();
+                            this.tooltip(Tooltip::text(label)).on_click(cx.listener(
+                                move |_, event: &ClickEvent, window, cx| {
+                                    activated_pane.update(cx, |pane, cx| {
+                                        pane.activate_item(ix, true, true, window, cx);
+                                    });
+                                    if event.click_count() > 1
+                                        && let Some(terminal_view) = rename_target.as_ref()
+                                    {
+                                        terminal_view.update(cx, |terminal_view, cx| {
+                                            terminal_view.rename_terminal(
+                                                &RenameTerminal,
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                        return;
+                                    }
+                                    window.focus(&activated_pane.focus_handle(cx), cx);
+                                },
+                            ))
+                        })
                         .end_slot_on_hover(
                             IconButton::new(("close-terminal", item_id), IconName::Close)
                                 .icon_size(IconSize::XSmall)

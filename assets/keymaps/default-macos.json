@@ -1335,6 +1335,7 @@
     "context": "Terminal",
     "use_key_equivalents": true,
     "bindings": {
+      "f2": "terminal::RenameTerminal",
       "ctrl-cmd-space": "terminal::ShowCharacterPalette",
       "cmd-c": "terminal::Copy",
       "cmd-v": "terminal::Paste",

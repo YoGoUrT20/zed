@@ -1277,6 +1277,7 @@
   {
     "context": "Terminal",
     "bindings": {
+      "f2": "terminal::RenameTerminal",
       "ctrl-alt-space": "terminal::ShowCharacterPalette",
       "copy": "terminal::Copy",
       "ctrl-insert": "terminal::Copy",

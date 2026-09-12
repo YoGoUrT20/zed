@@ -437,13 +437,22 @@ impl TerminalView {
         self.rename_editor.is_some()
     }
 
+    pub fn rename_editor(&self) -> Option<Entity<Editor>> {
+        self.rename_editor.clone()
+    }
+
     pub fn rename_editor_is_focused(&self, window: &Window, cx: &App) -> bool {
         self.rename_editor
             .as_ref()
             .is_some_and(|editor| editor.focus_handle(cx).is_focused(window))
     }
 
-    fn finish_renaming(&mut self, save: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn finish_renaming(
+        &mut self,
+        save: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(editor) = self.rename_editor.take() else {
             return;
         };
@@ -3089,6 +3098,88 @@ mod tests {
             view.needs_serialize = false;
             view.set_custom_title(Some("new_label".to_string()), cx);
             assert!(view.needs_serialize);
+        });
+    }
+
+    #[gpui::test]
+    async fn test_rename_terminal_sets_custom_title(cx: &mut TestAppContext) {
+        cx.executor().allow_parking();
+
+        let (project, workspace) = init_test(cx).await;
+
+        let terminal = project
+            .update(cx, |project, cx| project.create_terminal_shell(None, cx))
+            .await
+            .unwrap();
+
+        let window = cx.add_window(|window, cx| {
+            TerminalView::new(
+                terminal,
+                workspace.downgrade(),
+                None,
+                project.downgrade(),
+                window,
+                cx,
+            )
+        });
+        let terminal_view = window.root(cx).unwrap();
+        let mut cx = VisualTestContext::from_window(*window, cx);
+
+        terminal_view.update_in(&mut cx, |view, window, cx| {
+            view.rename_terminal(&RenameTerminal, window, cx);
+            assert!(view.is_renaming());
+            let editor = view.rename_editor().expect("rename editor is open");
+            editor.update(cx, |editor, cx| editor.set_text("api", window, cx));
+            view.finish_renaming(true, window, cx);
+        });
+
+        terminal_view.update(&mut cx, |view, cx| {
+            assert!(!view.is_renaming());
+            assert!(view.rename_editor().is_none());
+            assert_eq!(view.custom_title(), Some("api"));
+            assert_eq!(view.tab_content_text(0, cx).as_ref(), "api");
+        });
+    }
+
+    #[gpui::test]
+    async fn test_cancel_rename_keeps_previous_title(cx: &mut TestAppContext) {
+        cx.executor().allow_parking();
+
+        let (project, workspace) = init_test(cx).await;
+
+        let terminal = project
+            .update(cx, |project, cx| project.create_terminal_shell(None, cx))
+            .await
+            .unwrap();
+
+        let window = cx.add_window(|window, cx| {
+            TerminalView::new(
+                terminal,
+                workspace.downgrade(),
+                None,
+                project.downgrade(),
+                window,
+                cx,
+            )
+        });
+        let terminal_view = window.root(cx).unwrap();
+        let mut cx = VisualTestContext::from_window(*window, cx);
+
+        terminal_view.update(&mut cx, |view, cx| {
+            view.set_custom_title(Some("build".to_string()), cx);
+        });
+
+        terminal_view.update_in(&mut cx, |view, window, cx| {
+            view.rename_terminal(&RenameTerminal, window, cx);
+            let editor = view.rename_editor().expect("rename editor is open");
+            assert_eq!(editor.read(cx).text(cx), "build");
+            editor.update(cx, |editor, cx| editor.set_text("discarded", window, cx));
+            view.finish_renaming(false, window, cx);
+        });
+
+        terminal_view.update(&mut cx, |view, _| {
+            assert!(!view.is_renaming());
+            assert_eq!(view.custom_title(), Some("build"));
         });
     }
 
