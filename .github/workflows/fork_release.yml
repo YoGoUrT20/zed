@@ -13,8 +13,19 @@ on:
   push:
     tags:
       - v*-fork.*
-  # Build the bundles without publishing a release, to smoke-test the workflow.
+  # Build the bundles without publishing a release: to smoke-test the workflow, or to get
+  # a single platform's bundle that cannot be built locally (macOS from a non-Mac host).
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: Which bundles to build
+        type: choice
+        default: all
+        options:
+          - all
+          - mac
+          - linux
+          - windows
 
 env:
   CARGO_TERM_COLOR: always
@@ -30,7 +41,11 @@ concurrency:
 
 jobs:
   bundle_mac_aarch64:
-    if: github.repository_owner != 'zed-industries'
+    if: >-
+      github.repository_owner != 'zed-industries'
+      && (github.event_name != 'workflow_dispatch'
+          || inputs.platforms == 'all'
+          || inputs.platforms == 'mac')
     runs-on: macos-15
     timeout-minutes: 360
     steps:
@@ -81,7 +96,11 @@ jobs:
           if-no-files-found: error
 
   bundle_linux_x86_64:
-    if: github.repository_owner != 'zed-industries'
+    if: >-
+      github.repository_owner != 'zed-industries'
+      && (github.event_name != 'workflow_dispatch'
+          || inputs.platforms == 'all'
+          || inputs.platforms == 'linux')
     # 22.04 rather than ubuntu-latest: the bundle links against the runner's glibc, so the
     # oldest image GitHub still hosts gives the widest distro compatibility.
     runs-on: ubuntu-22.04
@@ -149,7 +168,11 @@ jobs:
           if-no-files-found: error
 
   bundle_windows_x86_64:
-    if: github.repository_owner != 'zed-industries'
+    if: >-
+      github.repository_owner != 'zed-industries'
+      && (github.event_name != 'workflow_dispatch'
+          || inputs.platforms == 'all'
+          || inputs.platforms == 'windows')
     # 2025 rather than 2022: script/bundle-windows.ps1 hardcodes Windows SDK 10.0.26100 for
     # makeappx.exe, which only the 2025 image ships.
     runs-on: windows-2025
