@@ -329,6 +329,23 @@ function BuildInstaller {
     # Currently, we are using Windows 2022 runner.
     # Windows runner 2025 doesn't have iscc in PATH for now, https://github.com/actions/runner-images/issues/11228
     $innoSetupPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+    # Fork: a non-elevated `winget install JRSoftware.InnoSetup` lands in the per-user
+    # Programs directory instead, so fall back to that and to whatever is on PATH.
+    if (-not (Test-Path $innoSetupPath)) {
+        $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+        )
+        $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $found) {
+            $found = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+        }
+        if (-not $found) {
+            Write-Error "ISCC.exe not found; install Inno Setup 6."
+            exit 1
+        }
+        $innoSetupPath = $found
+    }
 
     $definitions = @{
         "AppId"          = $appId
