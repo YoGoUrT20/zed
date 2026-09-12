@@ -202,6 +202,15 @@ pub struct ItemSettingsContent {
     ///
     /// Default: false
     pub show_close_button: Option<ShowCloseButton>,
+    /// Whether to always show the parent directory next to the file name on a
+    /// tab, instead of only when two open tabs share the same file name.
+    ///
+    /// Default: false
+    pub show_parent_directory: Option<bool>,
+    /// Whether to draw an accent gradient along the top edge of the active tab.
+    ///
+    /// Default: false
+    pub active_tab_accent: Option<bool>,
 }
 
 #[with_fallible_options]

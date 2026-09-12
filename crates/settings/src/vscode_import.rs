@@ -786,6 +786,8 @@ impl VsCodeSettings {
                         ShowCloseButton::Hidden
                     }
                 }),
+            show_parent_directory: None,
+            active_tab_accent: None,
         })
     }
 

@@ -6910,6 +6910,13 @@ pub fn render_breadcrumb_text(
             return styled_element;
         }
 
+        if index == 0
+            && segment.highlights.is_empty()
+            && let Some(styled_path) = apply_breadcrumb_path_style(&segment, &text_style, cx)
+        {
+            return styled_path;
+        }
+
         StyledText::new(segment.text.replace('\n', " "))
             .with_default_highlights(&text_style, segment.highlights)
             .into_any()
@@ -7018,6 +7025,51 @@ pub fn render_breadcrumb_text(
             .child(breadcrumbs)
             .into_any_element(),
     }
+}
+
+/// Renders the leading path segment of a breadcrumb with dimmed separators and an
+/// accented, semibold file name, so the file being edited stands out from its
+/// containing directories.
+fn apply_breadcrumb_path_style(
+    segment: &HighlightedText,
+    text_style: &gpui::TextStyle,
+    cx: &App,
+) -> Option<gpui::AnyElement> {
+    let text = segment.text.replace('\n', " ");
+    let components = text
+        .split(['/', '\\'])
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    let (file_name, directories) = components.split_last()?;
+
+    let mut separator_style = text_style.clone();
+    separator_style.color = Color::Placeholder.color(cx);
+
+    let mut file_name_style = text_style.clone();
+    file_name_style.color = Color::Accent.color(cx);
+    file_name_style.font_weight = FontWeight::SEMIBOLD;
+
+    // The folder icon only makes sense once there is a directory to stand for; a
+    // bare file name (or a buffer title like "untitled") gets the accent alone.
+    let mut path = h_flex().gap_1().when(!directories.is_empty(), |this| {
+        this.child(
+            Icon::new(IconName::Folder)
+                .size(IconSize::XSmall)
+                .color(Color::Muted),
+        )
+    });
+    for directory in directories {
+        path = path
+            .child(StyledText::new(directory.to_string()).with_default_highlights(text_style, []))
+            .child(StyledText::new("/").with_default_highlights(&separator_style, []));
+    }
+
+    Some(
+        path.child(
+            StyledText::new(file_name.to_string()).with_default_highlights(&file_name_style, []),
+        )
+        .into_any(),
+    )
 }
 
 fn apply_dirty_filename_style(

@@ -2850,6 +2850,12 @@ impl Pane {
             .map(|id| id == item.item_id())
             .unwrap_or(false);
 
+        let detail = if ItemSettings::get_global(cx).show_parent_directory {
+            detail.max(1)
+        } else {
+            detail
+        };
+
         let label = item.tab_content(
             TabContentParams {
                 detail: Some(detail),
@@ -2917,6 +2923,7 @@ impl Pane {
                 ClosePosition::Left => ui::TabCloseSide::Start,
                 ClosePosition::Right => ui::TabCloseSide::End,
             })
+            .top_accent(settings.active_tab_accent)
             .toggle_state(is_active)
             .on_click(cx.listener({
                 let item_handle = item.boxed_clone();

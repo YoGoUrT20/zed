@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 
-use gpui::{AnyElement, IntoElement, Stateful};
+use gpui::{AnyElement, IntoElement, Stateful, linear_color_stop, linear_gradient};
 use smallvec::SmallVec;
 
 use crate::prelude::*;
 
 const START_TAB_SLOT_SIZE: Pixels = px(12.);
 const END_TAB_SLOT_SIZE: Pixels = px(14.);
+const TOP_ACCENT_HEIGHT: Pixels = px(2.);
 
 /// The position of a [`Tab`] within a list of tabs.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -35,6 +36,7 @@ pub struct Tab {
     selected: bool,
     position: TabPosition,
     close_side: TabCloseSide,
+    top_accent: bool,
     start_slot: Option<AnyElement>,
     end_slot: Option<AnyElement>,
     children: SmallVec<[AnyElement; 2]>,
@@ -50,6 +52,7 @@ impl Tab {
             selected: false,
             position: TabPosition::First,
             close_side: TabCloseSide::End,
+            top_accent: false,
             start_slot: None,
             end_slot: None,
             children: SmallVec::new(),
@@ -63,6 +66,12 @@ impl Tab {
 
     pub fn close_side(mut self, close_side: TabCloseSide) -> Self {
         self.close_side = close_side;
+        self
+    }
+
+    /// Draws an accent gradient along the top edge of the tab while it is selected.
+    pub fn top_accent(mut self, top_accent: bool) -> Self {
+        self.top_accent = top_accent;
         self
     }
 
@@ -165,6 +174,23 @@ impl RenderOnce for Tab {
                 TabPosition::Middle(Ordering::Greater) => this.border_r_1().pl_px().border_b_1(),
             })
             .cursor_pointer()
+            .relative()
+            .when(self.top_accent && self.selected, |this| {
+                let colors = cx.theme().colors();
+                this.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .h(TOP_ACCENT_HEIGHT)
+                        .bg(linear_gradient(
+                            90.,
+                            linear_color_stop(colors.text_accent, 0.),
+                            linear_color_stop(cx.theme().players().local().cursor, 1.),
+                        )),
+                )
+            })
             .child(
                 h_flex()
                     .group("")

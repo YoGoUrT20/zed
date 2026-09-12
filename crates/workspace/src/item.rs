@@ -61,6 +61,8 @@ pub struct ItemSettings {
     pub file_icons: bool,
     pub show_diagnostics: ShowDiagnostics,
     pub show_close_button: ShowCloseButton,
+    pub show_parent_directory: bool,
+    pub active_tab_accent: bool,
 }
 
 #[derive(RegisterSetting)]
@@ -91,6 +93,8 @@ impl Settings for ItemSettings {
             file_icons: tabs.file_icons.unwrap(),
             show_diagnostics: tabs.show_diagnostics.unwrap(),
             show_close_button: tabs.show_close_button.unwrap(),
+            show_parent_directory: tabs.show_parent_directory.unwrap(),
+            active_tab_accent: tabs.active_tab_accent.unwrap(),
         }
     }
 }

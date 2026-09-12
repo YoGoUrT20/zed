@@ -1457,6 +1457,11 @@
     // 3. Never show it, even if hovering it.
     //     "hidden"
     "show_close_button": "hover",
+    // Whether to always show the parent directory next to the file name on a tab,
+    // instead of only when two open tabs share the same file name.
+    "show_parent_directory": false,
+    // Whether to draw an accent gradient along the top edge of the active tab.
+    "active_tab_accent": false,
     // What to do after closing the current tab.
     //
     // 1. Activate the tab that was open previously (default)
